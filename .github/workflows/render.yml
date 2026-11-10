@@ -19,7 +19,8 @@ jobs:
       - name: Tampilkan label
         env:
           LABEL: ${{ github.event.inputs.label }}
-        run: echo "Label: $LABEL"
+        run: |
+          echo "Label: $LABEL"
 
       - name: Spek runner
         run: |
