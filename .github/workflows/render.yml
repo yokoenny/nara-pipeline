@@ -1,55 +1,42 @@
-name: Test Render
-
-"on":
+name: render
+on:
   workflow_dispatch:
     inputs:
-      label:
-        description: 'Label run'
-        required: false
-        default: 'test-render'
-        type: string
-
+      package:
+        description: "Nama paket di bucket (render_in/<package>.zip) atau 'proof'"
+        required: true
+        default: "proof"
+permissions:
+  id-token: write
+  contents: read
 jobs:
-  test-render:
+  render:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Tampilkan label
-        env:
-          LABEL: ${{ github.event.inputs.label }}
-        run: |
-          echo "Label: $LABEL"
-
-      - name: Spek runner
-        run: |
-          echo "vCPU: $(nproc)"
-          nproc
-          free -h
-
-      - name: Pastikan ffmpeg tersedia
-        run: |
-          if ! command -v ffmpeg >/dev/null 2>&1; then
-            sudo apt-get update && sudo apt-get install -y ffmpeg
-          fi
-          ffmpeg -version
-
-      - name: Render video uji 10 detik 1080x1920 H.265
-        run: |
-          START=$(date +%s)
-          time ffmpeg -y -f lavfi -i smptebars=size=1080x1920:rate=30:duration=10 -f lavfi -i sine=frequency=1000:duration=10 -c:v libx265 -crf 26 -preset fast -pix_fmt yuv420p -c:a aac -shortest test_render.mp4
-          END=$(date +%s)
-          echo "Waktu render (detik): $((END - START))"
-          ls -lh test_render.mp4
-
-      - name: Periksa hasil render
-        run: |
-          ffprobe -v error -show_format -show_streams test_render.mp4
-          ls -lh test_render.mp4
-
-      - name: Unggah artifact
-        uses: actions/upload-artifact@v4
+      - name: Auth ke Google Cloud (keyless WIF)
+        uses: google-github-actions/auth@v2
         with:
-          name: test-render
-          path: test_render.mp4
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SA }}
+      - name: Siapkan gcloud
+        uses: google-github-actions/setup-gcloud@v2
+      - name: Ambil paket input
+        if: ${{ inputs.package != 'proof' }}
+        run: |
+          gsutil cp "gs://${{ vars.GCS_BUCKET }}/render_in/${{ inputs.package }}.zip" pkg.zip
+          mkdir -p work && cd work && unzip -o ../pkg.zip
+      - name: Render mode proof
+        if: ${{ inputs.package == 'proof' }}
+        run: |
+          mkdir -p out
+          ffmpeg -y -f lavfi -i testsrc2=size=1080x1920:rate=30 -t 3 -c:v libx265 -preset fast -crf 26 -pix_fmt yuv420p out/proof.mp4
+      - name: Render paket
+        if: ${{ inputs.package != 'proof' }}
+        run: |
+          mkdir -p out
+          cd work && bash render.sh
+          cp -r ../work/out/* ../out/ 2>/dev/null || cp -r out/* ../out/ 2>/dev/null || true
+      - name: Unggah hasil ke bucket
+        run: |
+          gsutil -m cp -r out/* "gs://${{ vars.GCS_BUCKET }}/render_out/${{ inputs.package }}/"
+          gsutil ls -l "gs://${{ vars.GCS_BUCKET }}/render_out/${{ inputs.package }}/"
