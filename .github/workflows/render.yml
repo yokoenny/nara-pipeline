@@ -1,6 +1,6 @@
 name: Test Render
 
-on:
+"on":
   workflow_dispatch:
     inputs:
       label:
@@ -17,7 +17,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Tampilkan label
-        run: echo "Label: ${{ inputs.label }}"
+        env:
+          LABEL: ${{ github.event.inputs.label }}
+        run: echo "Label: $LABEL"
 
       - name: Spek runner
         run: |
